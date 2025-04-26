@@ -7,9 +7,9 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Funkcja pobierająca losowy artykuł z Wikipedii z kategorii
+// Funkcja pobierająca losowy artykuł z polskiej Wikipedii z kategorii
 async function getFactFromCategory(category) {
-  const endpoint = `https://en.wikipedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:${encodeURIComponent(category)}&cmlimit=50&format=json`;
+  const endpoint = `https://pl.wikipedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Kategoria:${encodeURIComponent(category)}&cmlimit=50&format=json`;
 
   const response = await fetch(endpoint);
   const data = await response.json();
@@ -22,7 +22,7 @@ async function getFactFromCategory(category) {
   const randomPage = data.query.categorymembers[Math.floor(Math.random() * data.query.categorymembers.length)];
 
   // Teraz pobierz streszczenie wybranej strony
-  const summaryEndpoint = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(randomPage.title)}`;
+  const summaryEndpoint = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(randomPage.title)}`;
 
   const summaryResponse = await fetch(summaryEndpoint);
   const summaryData = await summaryResponse.json();
@@ -37,7 +37,7 @@ async function getFactFromCategory(category) {
 
 // Funkcja pobierająca losowy artykuł (bez kategorii)
 async function getRandomFact() {
-  const response = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary');
+  const response = await fetch('https://pl.wikipedia.org/api/rest_v1/page/random/summary');
   const data = await response.json();
   return {
     title: data.title,

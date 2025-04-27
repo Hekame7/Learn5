@@ -8,7 +8,18 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:19006',   // Jeśli testujesz na Expo Go lokalnie
+  'https://learn5.onrender.com',  // Twój backend Render.com
+  '*' // Tymczasowo zezwalamy wszystkim na testy
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
 // Funkcja pobierająca ciekawostkę na podstawie tematu od AI

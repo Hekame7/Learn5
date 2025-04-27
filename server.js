@@ -17,7 +17,7 @@ async function getFactFromAI(topic) {
 Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
 `;
 
-const response = await fetch('https://api-inference.huggingface.co/models/bigscience/bloom', {
+const response = await fetch('https://api-inference.huggingface.co/models/EleutherAI/gpt-j-6B', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,

@@ -1,90 +1,63 @@
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+import { OpenAI } from 'openai';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+app.use(express.json());
 
-// Funkcja pobierająca losowy artykuł z polskiej Wikipedii z kategorii
-async function getFactFromCategory(category) {
-  const endpoint = `https://pl.wikipedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Kategoria:${encodeURIComponent(category)}&cmlimit=50&format=json`;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-  const response = await fetch(endpoint);
-  
-  if (!response.ok) {
-    throw new Error('Błąd pobierania listy kategorii: ' + response.status);
-  }
+// Funkcja pobierająca ciekawostkę na podstawie tematu od AI
+async function getFactFromAI(topic) {
+  const prompt = `
+Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
+- Maksymalnie 500 znaków.
+- Styl: przyjazny, lekko naukowy.
+- Na końcu podaj źródło w formie URL.
+Przykład odpowiedzi:
+{
+  "title": "Tytuł ciekawostki",
+  "fact": "Krótki opis ciekawostki w maks 500 znakach.",
+  "source": "https://linkdokategorii.pl"
+}
+Zwróć odpowiedź w formacie JSON.
+`;
 
-  const data = await response.json();
+  const completion = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo", // lub "gpt-4" jeśli masz dostęp
+    messages: [
+      { role: "system", content: "Jesteś asystentem tworzącym krótkie ciekawostki edukacyjne." },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.7,
+  });
 
-  if (!data.query || !data.query.categorymembers) {
-    console.error('Brak danych:', JSON.stringify(data));
-    throw new Error('Nieprawidłowe dane z Wikipedii');
-  }
-
-  // Filtrowanie tylko artykułów (ns === 0)
-  const articles = data.query.categorymembers.filter(page => page.ns === 0);
-
-  if (articles.length === 0) {
-    console.error('Brak artykułów ns=0 dla kategorii:', category);
-    throw new Error('Brak artykułów w tej kategorii');
-  }
-
-  const randomPage = articles[Math.floor(Math.random() * articles.length)];
-
-  // Teraz pobierz streszczenie wybranej strony
-  const summaryEndpoint = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(randomPage.title)}`;
-
-  const summaryResponse = await fetch(summaryEndpoint);
-
-  if (!summaryResponse.ok) {
-    throw new Error('Błąd pobierania streszczenia: ' + summaryResponse.status);
-  }
-
-  const summaryData = await summaryResponse.json();
-
-  if (!summaryData.extract) {
-    console.error('Brak extract w streszczeniu:', summaryData);
-    throw new Error('Brak ciekawostki w streszczeniu');
-  }
-
-  return {
-    title: summaryData.title,
-    fact: summaryData.extract,
-    source: summaryData.content_urls.desktop.page,
-    date: new Date().toISOString(),
-  };
+  const response = completion.choices[0].message.content;
+  return JSON.parse(response);
 }
 
-// Funkcja pobierająca losowy artykuł (bez kategorii)
-async function getRandomFact() {
-  const response = await fetch('https://pl.wikipedia.org/api/rest_v1/page/random/summary');
-  const data = await response.json();
-  return {
-    title: data.title,
-    fact: data.extract,
-    source: data.content_urls.desktop.page,
-    date: new Date().toISOString(),
-  };
-}
-
-// Endpoint: dynamicznie pobiera ciekawostkę
+// Endpoint: pobieranie ciekawostki
 app.get('/fact', async (req, res) => {
-  const { category } = req.query;
+  const { topic } = req.query;
+
+  if (!topic) {
+    return res.status(400).json({ error: 'Brak tematu (topic) w zapytaniu.' });
+  }
 
   try {
-    if (category) {
-      const fact = await getFactFromCategory(category);
-      res.json(fact);
-    } else {
-      const fact = await getRandomFact();
-      res.json(fact);
-    }
+    const fact = await getFactFromAI(topic);
+    res.json(fact);
   } catch (error) {
-    console.error('Błąd podczas pobierania ciekawostki:', error);
-    res.status(500).json({ error: 'Nie udało się pobrać ciekawostki.' });
+    console.error('Błąd podczas pobierania ciekawostki od AI:', error);
+    res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.' });
   }
 });
 

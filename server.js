@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
+import { OpenAI } from 'openai';
 
 dotenv.config();
 
@@ -22,7 +23,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Szukanie artykułów w Wikipedii przez OpenSearch
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Szukanie artykułów OpenSearch EN
 async function searchWikipediaOpenSearch(topic) {
   const response = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=50&namespace=0&format=json&origin=*`);
   if (!response.ok) {
@@ -47,6 +52,35 @@ async function searchWikipediaOpenSearch(topic) {
   return results;
 }
 
+// Pobieranie pełnego streszczenia EN
+async function getWikipediaSummary(pageTitle) {
+  const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`);
+  if (!response.ok) {
+    throw new Error('Błąd podczas pobierania streszczenia.');
+  }
+  const data = await response.json();
+  return {
+    title: data.title,
+    extract: data.extract,
+    url: data.content_urls?.desktop?.page || null,
+  };
+}
+
+// Tłumaczenie na polski przez OpenAI
+async function translateToPolish(text) {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [
+      { role: 'system', content: 'Jesteś tłumaczem. Tłumacz podany tekst z angielskiego na polski.' },
+      { role: 'user', content: text }
+    ],
+    temperature: 0.3,
+    max_tokens: 400,
+  });
+
+  return completion.choices[0]?.message?.content?.trim() || text;
+}
+
 // Endpoint: /fact
 app.get('/fact', async (req, res) => {
   const { topic } = req.query;
@@ -59,9 +93,18 @@ app.get('/fact', async (req, res) => {
     const articles = await searchWikipediaOpenSearch(topic);
     const randomArticle = articles[Math.floor(Math.random() * articles.length)];
 
+    let lessonSummary = randomArticle.description;
+
+    if (!lessonSummary) {
+      const { extract } = await getWikipediaSummary(randomArticle.title);
+      lessonSummary = extract || 'Brak dostępnego streszczenia.';
+    }
+
+    const translatedSummary = await translateToPolish(lessonSummary);
+
     res.json({
       lessonTitle: `Czego możesz się nauczyć o: ${randomArticle.title}`,
-      lessonSummary: randomArticle.description || 'Brak krótkiego opisu.',
+      lessonSummary: translatedSummary,
       source: randomArticle.url,
       date: new Date().toISOString(),
     });

@@ -15,11 +15,9 @@ app.use(express.json());
 async function getFactFromAI(topic) {
   const prompt = `
 Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
-- Maksymalnie 500 znaków.
-- Styl: przyjazny, lekko naukowy.
 `;
 
-const response = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
+const response = await fetch('https://api-inference.huggingface.co/models/bigscience/bloom', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,

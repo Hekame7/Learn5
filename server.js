@@ -24,11 +24,9 @@ app.use(express.json());
 
 // Funkcja pobierająca ciekawostkę na podstawie tematu od AI
 async function getFactFromAI(topic) {
-  const prompt = `
-Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
-`;
+const prompt = `Napisz krótką ciekawostkę na temat: ${topic}`;
 
-const response = await fetch('https://api-inference.huggingface.co/models/EleutherAI/gpt-j-6B', {
+const response = await fetch('https://api-inference.huggingface.co/models/t5-small', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,

@@ -18,8 +18,15 @@ async function getFactFromCategory(category) {
     throw new Error('Brak artykułów w tej kategorii');
   }
 
-  // Losowo wybierz jedną stronę
-  const randomPage = data.query.categorymembers[Math.floor(Math.random() * data.query.categorymembers.length)];
+	// Filtrowanie tylko artykułów (ns === 0)
+	const articles = data.query.categorymembers.filter(page => page.ns === 0);
+
+	if (articles.length === 0) {
+	  throw new Error('Brak artykułów w tej kategorii');
+	}
+
+	// Losowo wybierz jeden artykuł z przefiltrowanej listy
+	const randomPage = articles[Math.floor(Math.random() * articles.length)];
 
   // Teraz pobierz streszczenie wybranej strony
   const summaryEndpoint = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(randomPage.title)}`;

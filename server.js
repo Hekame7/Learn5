@@ -11,23 +11,15 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Funkcja pobierająca ciekawostkę na podstawie tematu od DeepSeek
+// Funkcja pobierająca ciekawostkę na podstawie tematu od AI
 async function getFactFromAI(topic) {
   const prompt = `
 Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
 - Maksymalnie 500 znaków.
 - Styl: przyjazny, lekko naukowy.
-- Na końcu podaj źródło w formie URL.
-Przykład odpowiedzi:
-{
-  "title": "Tytuł ciekawostki",
-  "fact": "Krótki opis ciekawostki w maks 500 znakach.",
-  "source": "https://linkdokategorii.pl"
-}
-Zwróć odpowiedź w formacie JSON.
 `;
 
-const response = await fetch('https://api-inference.huggingface.co/models/google/flan-t5-large', {
+  const response = await fetch('https://api-inference.huggingface.co/models/google/flan-t5-large', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,
@@ -39,21 +31,24 @@ const response = await fetch('https://api-inference.huggingface.co/models/google
   });
 
   if (!response.ok) {
-    throw new Error(`Błąd w komunikacji z DeepSeek: ${response.status}`);
+    throw new Error(`Błąd w komunikacji z AI: ${response.status}`);
   }
 
   const data = await response.json();
 
   if (!data || !data[0] || !data[0].generated_text) {
-    throw new Error('Brak poprawnej odpowiedzi od DeepSeek');
+    throw new Error('Brak poprawnej odpowiedzi od AI');
   }
 
-  // Odpowiedź z modelu powinna być JSON, ale zawsze sprawdzimy
-  try {
-    return JSON.parse(data[0].generated_text);
-  } catch (error) {
-    throw new Error('Nie udało się sparsować odpowiedzi jako JSON');
-  }
+  const generatedText = data[0].generated_text.trim();
+
+  // Zamiast próbować parsować JSON, po prostu pakujemy odpowiedź do własnej struktury
+  return {
+    title: `Ciekawostka o: ${topic}`,
+    fact: generatedText,
+    source: "https://pl.wikipedia.org",
+    date: new Date().toISOString(),
+  };
 }
 
 // Endpoint: pobieranie ciekawostki

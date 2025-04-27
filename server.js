@@ -2,13 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { OpenAI } from 'openai';
+import fetch from 'node-fetch';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Konfiguracja CORS
 const allowedOrigins = [
   'http://localhost:19006',
   'https://learn5.onrender.com',
@@ -23,46 +23,75 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Inicjalizacja klienta OpenAI
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // musi być ustawione w .env
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Funkcja pobierająca ciekawostkę z OpenAI
-async function getFactFromAI(topic) {
-const prompt = `
-Napisz krótką, interesującą ciekawostkę na temat: "${topic}".
-Ciekawostka musi być w 100% prawdziwa, oparta na sprawdzonych źródłach takich jak Wikipedia, Encyclopedia Britannica lub podobne.
-Nie wymyślaj faktów. Jeśli temat jest nieznany lub brakuje pewnych danych, napisz tylko to, co jest pewne.
-Użyj maksymalnie 2-3 zdań, zachowując naukową dokładność i prosty, przystępny język.
+// Funkcja generująca ciekawostkę i słowo kluczowe
+async function generateFactAndKeyword(topic) {
+  const prompt = `
+Podany temat: "${topic}".
+
+Twoje zadanie:
+- Wymyśl krótką, prawdziwą ciekawostkę na temat związany z tym tematem.
+- Wybierz konkretne, ciekawe zagadnienie (np. konkretny gatunek, proces, ciekawy fakt).
+- Ciekawostka musi być zgodna z faktami dostępnymi w ogólnodostępnych encyklopediach (Wikipedia, Britannica).
+- Odpowiedź zwróć w formacie JSON:
+{
+  "fact": "Twoja ciekawostka",
+  "keyword": "Krótkie hasło do wyszukiwania w encyklopedii"
+}
 `;
 
-
   const completion = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo', // Możesz zmienić na "gpt-4" jeśli chcesz
+    model: 'gpt-3.5-turbo',
     messages: [
-      { role: 'system', content: 'Jesteś pomocnym asystentem generującym ciekawostki.' },
+      { role: 'system', content: 'Jesteś pomocnym asystentem generującym prawdziwe ciekawostki na podstawie encyklopedii.' },
       { role: 'user', content: prompt }
     ],
-    temperature: 0.4, // trochę kreatywności
-    max_tokens: 200,  // ograniczamy długość odpowiedzi
+    temperature: 0.5,
+    max_tokens: 400,
   });
 
-  const generatedText = completion.choices[0]?.message?.content?.trim();
+  const content = completion.choices[0]?.message?.content;
+  if (!content) throw new Error('Brak odpowiedzi od OpenAI.');
 
-  if (!generatedText) {
-    throw new Error('Brak wygenerowanej odpowiedzi od OpenAI.');
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error('Nie udało się sparsować odpowiedzi OpenAI jako JSON.');
   }
 
-  return {
-    title: `Ciekawostka o: ${topic}`,
-    fact: generatedText,
-    source: "OpenAI",
-    date: new Date().toISOString(),
-  };
+  if (!parsed.fact || !parsed.keyword) {
+    throw new Error('Brak ciekawostki lub słowa kluczowego w odpowiedzi.');
+  }
+
+  return parsed;
 }
 
-// Endpoint: pobieranie ciekawostki
+// Funkcja szukająca linku w Wikipedii
+async function findWikipediaPage(keyword) {
+  const searchResponse = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(keyword)}&limit=3`);
+  if (!searchResponse.ok) {
+    throw new Error('Błąd podczas wyszukiwania w Wikipedii.');
+  }
+
+  const searchData = await searchResponse.json();
+  if (!searchData.pages || searchData.pages.length === 0) {
+    throw new Error('Nie znaleziono strony w Wikipedii.');
+  }
+
+  // Pobieramy najlepszy wynik
+  const bestMatch = searchData.pages[0];
+  if (!bestMatch.key) {
+    throw new Error('Brak tytułu strony w wynikach wyszukiwania Wikipedii.');
+  }
+
+  return `https://en.wikipedia.org/wiki/${encodeURIComponent(bestMatch.key)}`;
+}
+
+// Endpoint generujący ciekawostkę
 app.get('/fact', async (req, res) => {
   const { topic } = req.query;
 
@@ -71,14 +100,15 @@ app.get('/fact', async (req, res) => {
   }
 
   try {
-    const fact = await getFactFromAI(topic);
-    res.json(fact);
-  } catch (error) {
-    console.error('Błąd podczas pobierania ciekawostki od OpenAI:', error);
-    res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.' });
-  }
-});
+    const { fact, keyword } = await generateFactAndKeyword(topic);
+    const wikiLink = await findWikipediaPage(keyword);
 
-app.listen(PORT, () => {
-  console.log(`Serwer działa na porcie ${PORT}`);
-});
+    res.json({
+      title: `Ciekawostka o: ${keyword}`,
+      fact,
+      source: wikiLink,
+      date: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Błąd:', error);
+    res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.'

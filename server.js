@@ -30,7 +30,13 @@ const openai = new OpenAI({
 
 // Funkcja pobierająca ciekawostkę z OpenAI
 async function getFactFromAI(topic) {
-  const prompt = `Napisz krótką, ciekawą ciekawostkę na temat: "${topic}". Odpowiedź powinna być zwięzła, interesująca i zawierać 1-2 zdania.`;
+const prompt = `
+Napisz krótką, interesującą ciekawostkę na temat: "${topic}".
+Ciekawostka musi być w 100% prawdziwa, oparta na sprawdzonych źródłach takich jak Wikipedia, Encyclopedia Britannica lub podobne.
+Nie wymyślaj faktów. Jeśli temat jest nieznany lub brakuje pewnych danych, napisz tylko to, co jest pewne.
+Użyj maksymalnie 2-3 zdań, zachowując naukową dokładność i prosty, przystępny język.
+`;
+
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-3.5-turbo', // Możesz zmienić na "gpt-4" jeśli chcesz
@@ -38,7 +44,7 @@ async function getFactFromAI(topic) {
       { role: 'system', content: 'Jesteś pomocnym asystentem generującym ciekawostki.' },
       { role: 'user', content: prompt }
     ],
-    temperature: 0.7, // trochę kreatywności
+    temperature: 0.4, // trochę kreatywności
     max_tokens: 200,  // ograniczamy długość odpowiedzi
   });
 

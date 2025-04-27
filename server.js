@@ -27,28 +27,30 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-async function searchWikipediaFullText(topic) {
-  const response = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(topic)}&srlimit=50&format=json&origin=*`);
+// Szukanie artykułów przez OpenSearch
+async function searchWikipediaOpenSearch(topic) {
+  const response = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=20&format=json&origin=*`);
   if (!response.ok) {
-    throw new Error('Błąd podczas pełnotekstowego wyszukiwania Wikipedii.');
+    throw new Error('Błąd podczas wyszukiwania przez OpenSearch.');
   }
   const data = await response.json();
 
-  if (!data.query.search || data.query.search.length === 0) {
-    throw new Error('Brak wyników pełnotekstowego wyszukiwania.');
+  const titles = data[1];
+  const descriptions = data[2];
+  const urls = data[3];
+
+  if (!titles.length) {
+    return [];
   }
 
-  // Mapujemy wyniki na strukturę jak w OpenSearch
-  const results = data.query.search.map(item => ({
-    title: item.title,
-    description: item.snippet.replace(/<[^>]*>?/gm, ''), // Usuwamy HTML z snippet
-    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title)}`
+  return titles.map((title, index) => ({
+    title,
+    description: descriptions[index],
+    url: urls[index],
   }));
-
-  return results;
 }
 
-// Pobieranie pełnego streszczenia EN
+// Pobieranie streszczenia artykułu z Wikipedii
 async function getWikipediaSummary(pageTitle) {
   const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`);
   if (!response.ok) {
@@ -62,7 +64,7 @@ async function getWikipediaSummary(pageTitle) {
   };
 }
 
-// Tłumaczenie na polski przez OpenAI
+// Tłumaczenie tekstu na polski
 async function translateToPolish(text) {
   const completion = await openai.chat.completions.create({
     model: 'gpt-3.5-turbo',
@@ -77,7 +79,7 @@ async function translateToPolish(text) {
   return completion.choices[0]?.message?.content?.trim() || text;
 }
 
-// Filtrowanie artykułów przez OpenAI
+// Filtrowanie artykułów według trafności tematu
 async function filterArticlesByTopic(topic, articles) {
   const prompt = `
 Masz temat: "${topic}".
@@ -113,32 +115,39 @@ Podaj numery pasujących artykułów jako listę oddzieloną przecinkami (np. "1
   return indices.map(i => articles[i]);
 }
 
-async function generateMultipleTranslations(topic) {
+// Generowanie tłumaczeń i słów kluczowych
+async function generateTranslationsAndKeywords(topic) {
   const prompt = `
-Podaj 5 różnych sposobów przetłumaczenia tematu "${topic}" z polskiego na angielski.
-Podaj tylko listę słów lub krótkich wyrażeń, oddzielonych przecinkami.
-Nie dodawaj wyjaśnień, opisów ani numeracji.
+Podaj 5 różnych tłumaczeń tematu "${topic}" z polskiego na angielski oraz 3 powiązane słowa kluczowe.
+Zwróć wynik wyłącznie w formacie JSON:
+{
+  "translations": ["tłumaczenie1", "tłumaczenie2", ..., "tłumaczenie5"],
+  "keywords": ["słowo1", "słowo2", "słowo3"]
+}
+Nie dodawaj nic poza JSON.
 `;
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-3.5-turbo',
     messages: [
-      { role: 'system', content: 'Tłumacz polskie tematy na kilka możliwych wariantów angielskich.' },
+      { role: 'system', content: 'Zwracaj wyłącznie dane w formacie JSON.' },
       { role: 'user', content: prompt }
     ],
     temperature: 0.2,
-    max_tokens: 50,
+    max_tokens: 200,
   });
 
-  const response = completion.choices[0]?.message?.content?.trim();
-  if (!response) {
-    return [topic]; // fallback
+  const content = completion.choices[0]?.message?.content?.trim();
+  if (!content) {
+    throw new Error('Brak odpowiedzi z OpenAI podczas generowania tłumaczeń i słów kluczowych.');
   }
 
-  return response.split(',').map(t => t.trim()).filter(t => t.length > 0);
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    throw new Error('Nie udało się sparsować odpowiedzi OpenAI.');
+  }
 }
-
-
 
 // Endpoint: /fact
 app.get('/fact', async (req, res) => {
@@ -149,61 +158,53 @@ app.get('/fact', async (req, res) => {
   }
 
   try {
-    //  Generowanie wielu tłumaczeń tematu
-    const translations = await generateMultipleTranslations(topic);
+    const { translations, keywords } = await generateTranslationsAndKeywords(topic);
 
-    let articles = [];
-    for (const translatedTopic of translations) {
+    const searchTerms = [...translations, ...keywords];
+
+    for (const term of searchTerms) {
       try {
-        const found = await searchWikipediaOpenSearch(translatedTopic);
-        articles = articles.concat(found);
+        const articles = await searchWikipediaOpenSearch(term);
+
+        if (articles.length === 0) {
+          console.warn(`Brak artykułów dla: ${term}`);
+          continue;
+        }
+
+        const filteredArticles = await filterArticlesByTopic(topic, articles);
+
+        if (filteredArticles.length > 0) {
+          const randomArticle = filteredArticles[Math.floor(Math.random() * filteredArticles.length)];
+
+          let lessonSummary = randomArticle.description;
+
+          if (!lessonSummary) {
+            const { extract } = await getWikipediaSummary(randomArticle.title);
+            lessonSummary = extract || 'Brak dostępnego streszczenia.';
+          }
+
+          const translatedSummary = await translateToPolish(lessonSummary);
+
+          return res.json({
+            lessonTitle: `Czego możesz się nauczyć o: ${randomArticle.title}`,
+            lessonSummary: translatedSummary,
+            source: randomArticle.url,
+            date: new Date().toISOString(),
+          });
+        }
+
       } catch (error) {
-        console.warn(`Brak wyników dla: ${translatedTopic}`);
+        console.warn(`Błąd podczas przeszukiwania terminu "${term}":`, error.message);
       }
     }
 
-    //  Usuwamy duplikaty artykułów (po tytule)
-    const uniqueArticles = Array.from(new Map(articles.map(a => [a.title, a])).values());
-
-    if (uniqueArticles.length === 0) {
-      throw new Error('Nie znaleziono żadnych artykułów dla tematu.');
-    }
-
-    //  Filtrowanie artykułów przez OpenAI (po polskim temacie)
-    const filteredArticles = await filterArticlesByTopic(topic, uniqueArticles);
-
-    if (filteredArticles.length === 0) {
-      throw new Error('Brak trafnych artykułów dla tematu.');
-    }
-
-    //  Losujemy trafny artykuł
-    const randomArticle = filteredArticles[Math.floor(Math.random() * filteredArticles.length)];
-
-    let lessonSummary = randomArticle.description;
-
-    if (!lessonSummary) {
-      const { extract } = await getWikipediaSummary(randomArticle.title);
-      lessonSummary = extract || 'Brak dostępnego streszczenia.';
-    }
-
-    //  Tłumaczymy streszczenie na polski
-    const translatedSummary = await translateToPolish(lessonSummary);
-
-    //  Zwracamy odpowiedź
-    res.json({
-      lessonTitle: `Czego możesz się nauczyć o: ${randomArticle.title}`,
-      lessonSummary: translatedSummary,
-      source: randomArticle.url,
-      date: new Date().toISOString(),
-    });
+    throw new Error('Nie znaleziono pasujących artykułów dla żadnego tłumaczenia ani słowa kluczowego.');
 
   } catch (error) {
     console.error('Błąd:', error);
     res.status(500).json({ error: error.message || 'Nie udało się pobrać materiału do nauki.' });
   }
 });
-
-
 
 app.listen(PORT, () => {
   console.log(`Serwer działa na porcie ${PORT}`);

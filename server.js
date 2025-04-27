@@ -1,17 +1,18 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import fetch from 'node-fetch';
+import { OpenAI } from 'openai';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Konfiguracja CORS
 const allowedOrigins = [
-  'http://localhost:19006',   // Jeśli testujesz na Expo Go lokalnie
-  'https://learn5.onrender.com',  // Twój backend Render.com
-  '*' // Tymczasowo zezwalamy wszystkim na testy
+  'http://localhost:19006',
+  'https://learn5.onrender.com',
+  '*'
 ];
 
 app.use(cors({
@@ -22,38 +23,35 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Funkcja pobierająca ciekawostkę na podstawie tematu od AI
-async function getFactFromAI(topic) {
-const prompt = `Napisz krótką ciekawostkę na temat: ${topic}`;
+// Inicjalizacja klienta OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // musi być ustawione w .env
+});
 
-const response = await fetch('https://api-inference.huggingface.co/models/gpt2-large', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      inputs: prompt
-    }),
+// Funkcja pobierająca ciekawostkę z OpenAI
+async function getFactFromAI(topic) {
+  const prompt = `Napisz krótką, ciekawą ciekawostkę na temat: "${topic}". Odpowiedź powinna być zwięzła, interesująca i zawierać 1-2 zdania.`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo', // Możesz zmienić na "gpt-4" jeśli chcesz
+    messages: [
+      { role: 'system', content: 'Jesteś pomocnym asystentem generującym ciekawostki.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.7, // trochę kreatywności
+    max_tokens: 200,  // ograniczamy długość odpowiedzi
   });
 
-  if (!response.ok) {
-    throw new Error(`Błąd w komunikacji z AI: ${response.status}`);
+  const generatedText = completion.choices[0]?.message?.content?.trim();
+
+  if (!generatedText) {
+    throw new Error('Brak wygenerowanej odpowiedzi od OpenAI.');
   }
 
-  const data = await response.json();
-
-  if (!data || !data[0] || !data[0].generated_text) {
-    throw new Error('Brak poprawnej odpowiedzi od AI');
-  }
-
-  const generatedText = data[0].generated_text.trim();
-
-  // Zamiast próbować parsować JSON, po prostu pakujemy odpowiedź do własnej struktury
   return {
     title: `Ciekawostka o: ${topic}`,
     fact: generatedText,
-    source: "https://pl.wikipedia.org",
+    source: "OpenAI",
     date: new Date().toISOString(),
   };
 }
@@ -70,7 +68,7 @@ app.get('/fact', async (req, res) => {
     const fact = await getFactFromAI(topic);
     res.json(fact);
   } catch (error) {
-    console.error('Błąd podczas pobierania ciekawostki od AI:', error);
+    console.error('Błąd podczas pobierania ciekawostki od OpenAI:', error);
     res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.' });
   }
 });

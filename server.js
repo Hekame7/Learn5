@@ -12,27 +12,43 @@ async function getFactFromCategory(category) {
   const endpoint = `https://pl.wikipedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Kategoria:${encodeURIComponent(category)}&cmlimit=50&format=json`;
 
   const response = await fetch(endpoint);
+  
+  if (!response.ok) {
+    throw new Error('Błąd pobierania listy kategorii: ' + response.status);
+  }
+
   const data = await response.json();
 
-  if (!data.query || !data.query.categorymembers || data.query.categorymembers.length === 0) {
+  if (!data.query || !data.query.categorymembers) {
+    console.error('Brak danych:', JSON.stringify(data));
+    throw new Error('Nieprawidłowe dane z Wikipedii');
+  }
+
+  // Filtrowanie tylko artykułów (ns === 0)
+  const articles = data.query.categorymembers.filter(page => page.ns === 0);
+
+  if (articles.length === 0) {
+    console.error('Brak artykułów ns=0 dla kategorii:', category);
     throw new Error('Brak artykułów w tej kategorii');
   }
 
-	// Filtrowanie tylko artykułów (ns === 0)
-	const articles = data.query.categorymembers.filter(page => page.ns === 0);
-
-	if (articles.length === 0) {
-	  throw new Error('Brak artykułów w tej kategorii');
-	}
-
-	// Losowo wybierz jeden artykuł z przefiltrowanej listy
-	const randomPage = articles[Math.floor(Math.random() * articles.length)];
+  const randomPage = articles[Math.floor(Math.random() * articles.length)];
 
   // Teraz pobierz streszczenie wybranej strony
   const summaryEndpoint = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(randomPage.title)}`;
 
   const summaryResponse = await fetch(summaryEndpoint);
+
+  if (!summaryResponse.ok) {
+    throw new Error('Błąd pobierania streszczenia: ' + summaryResponse.status);
+  }
+
   const summaryData = await summaryResponse.json();
+
+  if (!summaryData.extract) {
+    console.error('Brak extract w streszczeniu:', summaryData);
+    throw new Error('Brak ciekawostki w streszczeniu');
+  }
 
   return {
     title: summaryData.title,

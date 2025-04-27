@@ -27,17 +27,17 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Szukamy artykułów w Wikipedii
-async function searchWikipediaArticles(topic) {
-  const response = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(topic)}&limit=50`);
+// Szukamy artykułów za pomocą pełnotekstowego wyszukiwania
+async function searchWikipediaFullText(topic) {
+  const response = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(topic)}&srlimit=50&format=json&origin=*`);
   if (!response.ok) {
-    throw new Error('Błąd podczas wyszukiwania w Wikipedii.');
+    throw new Error('Błąd podczas pełnotekstowego wyszukiwania w Wikipedii.');
   }
   const data = await response.json();
-  if (!data.pages || data.pages.length === 0) {
-    throw new Error('Brak wyników wyszukiwania w Wikipedii.');
+  if (!data.query.search || data.query.search.length === 0) {
+    throw new Error('Brak wyników w pełnotekstowym wyszukiwaniu Wikipedii.');
   }
-  return data.pages;
+  return data.query.search; // Lista artykułów
 }
 
 // Pobieramy streszczenie artykułu
@@ -48,12 +48,13 @@ async function getWikipediaSummary(pageTitle) {
   }
   const data = await response.json();
   return {
+    title: data.title,
     extract: data.extract,
     url: data.content_urls?.desktop?.page || null,
   };
 }
 
-// Opcjonalnie: Formatujemy streszczenie przez GPT, żeby było przyjemniejsze
+// Opcjonalnie: Formatujemy streszczenie przez AI
 async function formatSummaryWithAI(summary) {
   const prompt = `
 Twoje zadanie: przeredaguj poniższe streszczenie w formie jednej ciekawej, łatwej do zapamiętania ciekawostki lub krótkiego faktu.
@@ -78,7 +79,7 @@ Twoja odpowiedź:
   return content || summary; // Jeśli coś pójdzie nie tak, zwróć oryginał
 }
 
-// Endpoint
+// Endpoint: /fact
 app.get('/fact', async (req, res) => {
   const { topic } = req.query;
 
@@ -87,10 +88,10 @@ app.get('/fact', async (req, res) => {
   }
 
   try {
-    const articles = await searchWikipediaArticles(topic);
+    const articles = await searchWikipediaFullText(topic);
     const randomArticle = articles[Math.floor(Math.random() * articles.length)];
 
-    const { extract, url } = await getWikipediaSummary(randomArticle.key);
+    const { title, extract, url } = await getWikipediaSummary(randomArticle.title);
 
     if (!extract) {
       throw new Error('Brak streszczenia dla wybranego artykułu.');
@@ -99,7 +100,7 @@ app.get('/fact', async (req, res) => {
     const formattedFact = await formatSummaryWithAI(extract);
 
     res.json({
-      title: randomArticle.title,
+      title: title,
       fact: formattedFact,
       source: url,
       date: new Date().toISOString(),

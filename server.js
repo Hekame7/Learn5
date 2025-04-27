@@ -111,4 +111,10 @@ app.get('/fact', async (req, res) => {
     });
   } catch (error) {
     console.error('Błąd:', error);
-    res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.'
+    res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.' });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Serwer działa na porcie ${PORT}`);
+});

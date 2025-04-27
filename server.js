@@ -81,6 +81,43 @@ async function translateToPolish(text) {
   return completion.choices[0]?.message?.content?.trim() || text;
 }
 
+// Filtrowanie artykułów przez OpenAI
+async function filterArticlesByTopic(topic, articles) {
+  const prompt = `
+Masz temat: "${topic}".
+
+Oto lista artykułów z krótkimi opisami:
+${articles.map((a, i) => `${i + 1}. Tytuł: ${a.title} | Opis: ${a.description || 'brak opisu'}`).join('\n')}
+
+Które artykuły naprawdę pasują do tematu "${topic}"?
+
+Podaj numery pasujących artykułów jako listę oddzieloną przecinkami (np. "1, 3, 5"). Jeśli żaden nie pasuje, napisz "brak".
+`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [
+      { role: 'system', content: 'Twoje zadanie to selekcjonowanie trafnych artykułów do tematu.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0,
+    max_tokens: 300,
+  });
+
+  const response = completion.choices[0]?.message?.content?.trim();
+  if (!response) {
+    throw new Error('OpenAI nie zwrócił odpowiedzi.');
+  }
+
+  if (response.toLowerCase().includes('brak')) {
+    return [];
+  }
+
+  const indices = response.split(',').map(n => parseInt(n.trim()) - 1).filter(n => !isNaN(n) && n >= 0 && n < articles.length);
+  return indices.map(i => articles[i]);
+}
+
+
 // Endpoint: /fact
 app.get('/fact', async (req, res) => {
   const { topic } = req.query;
@@ -90,8 +127,14 @@ app.get('/fact', async (req, res) => {
   }
 
   try {
-    const articles = await searchWikipediaOpenSearch(topic);
-    const randomArticle = articles[Math.floor(Math.random() * articles.length)];
+	const articles = await searchWikipediaOpenSearch(topic);
+	const filteredArticles = await filterArticlesByTopic(topic, articles);
+
+	if (filteredArticles.length === 0) {
+	  throw new Error('Brak trafnych artykułów dla tematu.');
+	}
+
+	const randomArticle = filteredArticles[Math.floor(Math.random() * filteredArticles.length)];
 
     let lessonSummary = randomArticle.description;
 

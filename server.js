@@ -27,7 +27,7 @@ Przykład odpowiedzi:
 Zwróć odpowiedź w formacie JSON.
 `;
 
-  const response = await fetch('https://api-inference.huggingface.co/models/deepseek-ai/deepseek-llm-7b', {
+const response = await fetch('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,

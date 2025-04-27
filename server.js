@@ -27,71 +27,58 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Funkcja generująca ciekawostkę i słowo kluczowe
-async function generateFactAndKeyword(topic) {
-  const prompt = `
-Podany temat: "${topic}".
-
-Twoje zadanie:
-- Wymyśl krótką, prawdziwą ciekawostkę na temat związany z tym tematem.
-- Wybierz konkretne, ciekawe zagadnienie (np. konkretny gatunek, proces, ciekawy fakt).
-- Ciekawostka musi być zgodna z faktami dostępnymi w ogólnodostępnych encyklopediach (Wikipedia, Britannica).
-- Odpowiedź zwróć w formacie JSON:
-{
-  "fact": "Twoja ciekawostka",
-  "keyword": "Krótkie hasło do wyszukiwania w encyklopedii"
+// Szukamy artykułów w Wikipedii
+async function searchWikipediaArticles(topic) {
+  const response = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(topic)}&limit=50`);
+  if (!response.ok) {
+    throw new Error('Błąd podczas wyszukiwania w Wikipedii.');
+  }
+  const data = await response.json();
+  if (!data.pages || data.pages.length === 0) {
+    throw new Error('Brak wyników wyszukiwania w Wikipedii.');
+  }
+  return data.pages;
 }
+
+// Pobieramy streszczenie artykułu
+async function getWikipediaSummary(pageTitle) {
+  const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`);
+  if (!response.ok) {
+    throw new Error('Błąd podczas pobierania streszczenia z Wikipedii.');
+  }
+  const data = await response.json();
+  return {
+    extract: data.extract,
+    url: data.content_urls?.desktop?.page || null,
+  };
+}
+
+// Opcjonalnie: Formatujemy streszczenie przez GPT, żeby było przyjemniejsze
+async function formatSummaryWithAI(summary) {
+  const prompt = `
+Twoje zadanie: przeredaguj poniższe streszczenie w formie jednej ciekawej, łatwej do zapamiętania ciekawostki lub krótkiego faktu.
+
+Tekst:
+"${summary}"
+
+Twoja odpowiedź:
 `;
 
   const completion = await openai.chat.completions.create({
     model: 'gpt-3.5-turbo',
     messages: [
-      { role: 'system', content: 'Jesteś pomocnym asystentem generującym prawdziwe ciekawostki na podstawie encyklopedii.' },
+      { role: 'system', content: 'Jesteś pomocnym edytorem treści edukacyjnych.' },
       { role: 'user', content: prompt }
     ],
     temperature: 0.5,
-    max_tokens: 400,
+    max_tokens: 200,
   });
 
-  const content = completion.choices[0]?.message?.content;
-  if (!content) throw new Error('Brak odpowiedzi od OpenAI.');
-
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch (error) {
-    throw new Error('Nie udało się sparsować odpowiedzi OpenAI jako JSON.');
-  }
-
-  if (!parsed.fact || !parsed.keyword) {
-    throw new Error('Brak ciekawostki lub słowa kluczowego w odpowiedzi.');
-  }
-
-  return parsed;
+  const content = completion.choices[0]?.message?.content?.trim();
+  return content || summary; // Jeśli coś pójdzie nie tak, zwróć oryginał
 }
 
-// Funkcja szukająca linku w Wikipedii
-async function findWikipediaPage(keyword) {
-  const searchResponse = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(keyword)}&limit=3`);
-  if (!searchResponse.ok) {
-    throw new Error('Błąd podczas wyszukiwania w Wikipedii.');
-  }
-
-  const searchData = await searchResponse.json();
-  if (!searchData.pages || searchData.pages.length === 0) {
-    throw new Error('Nie znaleziono strony w Wikipedii.');
-  }
-
-  // Pobieramy najlepszy wynik
-  const bestMatch = searchData.pages[0];
-  if (!bestMatch.key) {
-    throw new Error('Brak tytułu strony w wynikach wyszukiwania Wikipedii.');
-  }
-
-  return `https://en.wikipedia.org/wiki/${encodeURIComponent(bestMatch.key)}`;
-}
-
-// Endpoint generujący ciekawostkę
+// Endpoint
 app.get('/fact', async (req, res) => {
   const { topic } = req.query;
 
@@ -100,18 +87,27 @@ app.get('/fact', async (req, res) => {
   }
 
   try {
-    const { fact, keyword } = await generateFactAndKeyword(topic);
-    const wikiLink = await findWikipediaPage(keyword);
+    const articles = await searchWikipediaArticles(topic);
+    const randomArticle = articles[Math.floor(Math.random() * articles.length)];
+
+    const { extract, url } = await getWikipediaSummary(randomArticle.key);
+
+    if (!extract) {
+      throw new Error('Brak streszczenia dla wybranego artykułu.');
+    }
+
+    const formattedFact = await formatSummaryWithAI(extract);
 
     res.json({
-      title: `Ciekawostka o: ${keyword}`,
-      fact,
-      source: wikiLink,
+      title: randomArticle.title,
+      fact: formattedFact,
+      source: url,
       date: new Date().toISOString(),
     });
+
   } catch (error) {
     console.error('Błąd:', error);
-    res.status(500).json({ error: 'Nie udało się wygenerować ciekawostki.' });
+    res.status(500).json({ error: error.message || 'Nie udało się pobrać faktu.' });
   }
 });
 

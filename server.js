@@ -19,7 +19,7 @@ Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
 - Styl: przyjazny, lekko naukowy.
 `;
 
-  const response = await fetch('https://api-inference.huggingface.co/models/NousResearch/Nous-Hermes-2-Mistral-7B-DPO', {
+  const response = await fetch('https://api-inference.huggingface.co/models/bigscience/bloomz-7b1', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,

@@ -26,7 +26,7 @@ app.use(express.json());
 async function getFactFromAI(topic) {
 const prompt = `Napisz krótką ciekawostkę na temat: ${topic}`;
 
-const response = await fetch('https://api-inference.huggingface.co/models/t5-small', {
+const response = await fetch('https://api-inference.huggingface.co/models/gpt2-large', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,

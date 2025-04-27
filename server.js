@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { OpenAI } from 'openai';
+import fetch from 'node-fetch';
 
 dotenv.config();
 
@@ -11,11 +11,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Funkcja pobierająca ciekawostkę na podstawie tematu od AI
+// Funkcja pobierająca ciekawostkę na podstawie tematu od DeepSeek
 async function getFactFromAI(topic) {
   const prompt = `
 Twoim zadaniem jest stworzenie krótkiej ciekawostki o temacie "${topic}".
@@ -31,17 +27,33 @@ Przykład odpowiedzi:
 Zwróć odpowiedź w formacie JSON.
 `;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo", // lub "gpt-4" jeśli masz dostęp
-    messages: [
-      { role: "system", content: "Jesteś asystentem tworzącym krótkie ciekawostki edukacyjne." },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0.7,
+  const response = await fetch('https://api-inference.huggingface.co/models/deepseek-ai/deepseek-llm-7b', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.HUGGINGFACE_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      inputs: prompt
+    }),
   });
 
-  const response = completion.choices[0].message.content;
-  return JSON.parse(response);
+  if (!response.ok) {
+    throw new Error(`Błąd w komunikacji z DeepSeek: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (!data || !data[0] || !data[0].generated_text) {
+    throw new Error('Brak poprawnej odpowiedzi od DeepSeek');
+  }
+
+  // Odpowiedź z modelu powinna być JSON, ale zawsze sprawdzimy
+  try {
+    return JSON.parse(data[0].generated_text);
+  } catch (error) {
+    throw new Error('Nie udało się sparsować odpowiedzi jako JSON');
+  }
 }
 
 // Endpoint: pobieranie ciekawostki

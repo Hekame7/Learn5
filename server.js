@@ -47,8 +47,8 @@ async function searchWikipediaOpenSearch(topic) {
   return results;
 }
 
-// Endpoint: /learn
-app.get('/learn', async (req, res) => {
+// Endpoint: /fact
+app.get('/fact', async (req, res) => {
   const { topic } = req.query;
 
   if (!topic) {

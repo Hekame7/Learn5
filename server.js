@@ -27,26 +27,22 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Szukanie artykułów OpenSearch EN
-async function searchWikipediaOpenSearch(topic) {
-  const response = await fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=50&namespace=0&format=json&origin=*`);
+async function searchWikipediaFullText(topic) {
+  const response = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(topic)}&srlimit=50&format=json&origin=*`);
   if (!response.ok) {
-    throw new Error('Błąd podczas wyszukiwania przez OpenSearch.');
+    throw new Error('Błąd podczas pełnotekstowego wyszukiwania Wikipedii.');
   }
   const data = await response.json();
 
-  const titles = data[1];
-  const descriptions = data[2];
-  const urls = data[3];
-
-  if (!titles.length) {
-    throw new Error('Brak wyników w OpenSearch.');
+  if (!data.query.search || data.query.search.length === 0) {
+    throw new Error('Brak wyników pełnotekstowego wyszukiwania.');
   }
 
-  const results = titles.map((title, index) => ({
-    title,
-    description: descriptions[index],
-    url: urls[index],
+  // Mapujemy wyniki na strukturę jak w OpenSearch
+  const results = data.query.search.map(item => ({
+    title: item.title,
+    description: item.snippet.replace(/<[^>]*>?/gm, ''), // Usuwamy HTML z snippet
+    url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title)}`
   }));
 
   return results;
